@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude RC Hub</title>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --panel: #ffffff;
+    --text: #1f1e1c;
+    --muted: #6f6c66;
+    --faint: #a19d95;
+    --line: #e6e3dc;
+    --hover: #f0eee8;
+    --accent: #d97757;
+    --accent-soft: #f6e3da;
+    --green: #2f9e5b;
+    --amber: #c98a12;
+    --red: #d0453a;
+    --off: #b9b5ad;
+    --switch-off: #d9d6cf;
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1b19;
+      --panel: #262522;
+      --text: #ecebe7;
+      --muted: #a29f98;
+      --faint: #75726c;
+      --line: #35332f;
+      --hover: #2e2d29;
+      --accent: #e08a6c;
+      --accent-soft: #3d2b24;
+      --green: #4cc27a;
+      --amber: #e3a93a;
+      --red: #ef6b5f;
+      --off: #5c5a55;
+      --switch-off: #45433e;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+  }
+  button { font: inherit; color: inherit; cursor: default; }
+
+  header {
+    padding: 18px 20px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: var(--accent); color: #fff;
+    display: grid; place-items: center;
+    font-size: 20px; flex: none;
+  }
+  .title { flex: 1; min-width: 0; }
+  .title h1 { margin: 0; font-size: 16px; font-weight: 650; }
+  .title .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .btn {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    padding: 5px 11px;
+    border-radius: 7px;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.05); }
+  .icon-btn {
+    border: 0; background: transparent;
+    width: 30px; height: 30px; border-radius: 7px;
+    display: grid; place-items: center;
+    color: var(--muted);
+  }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+  .icon-btn svg { width: 17px; height: 17px; }
+
+  .banner {
+    margin: 0 20px 10px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    background: var(--accent-soft);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .banner span { flex: 1; }
+  .banner[hidden] { display: none; }
+
+  .toolbar {
+    padding: 0 20px 10px;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .search {
+    flex: 1; min-width: 0;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 5px 10px;
+    font: inherit;
+    outline: none;
+  }
+  .search:focus { border-color: var(--accent); }
+  .seg {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  .seg button {
+    border: 0; background: transparent;
+    padding: 5px 10px;
+    color: var(--muted);
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--hover); color: var(--text); font-weight: 600; }
+
+  main { flex: 1; overflow-y: auto; padding: 0 20px 20px; }
+  .list {
+    background: var(--panel);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 14px;
+    border-top: 1px solid var(--line);
+  }
+  .row:first-child { border-top: 0; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--off); flex: none;
+  }
+  .dot.running { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 20%, transparent); }
+  .dot.pending { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+  .dot.dead { background: var(--red); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .info { flex: 1; min-width: 0; }
+  .name {
+    font-weight: 600; font-size: 13.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .meta {
+    color: var(--muted); font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .meta .warn { color: var(--red); }
+  .chats { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .chip {
+    background: var(--hover);
+    border-radius: 5px;
+    padding: 1px 7px;
+    font-size: 11.5px;
+    color: var(--muted);
+    max-width: 260px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .star { color: var(--faint); }
+  .star.auto { color: var(--accent); }
+  .star.pinned svg { fill: currentColor; }
+
+  .switch {
+    position: relative; flex: none;
+    width: 36px; height: 21px;
+    border-radius: 11px; border: 0;
+    background: var(--switch-off);
+    transition: background .15s;
+    padding: 0;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    transition: transform .15s;
+  }
+  .switch.on { background: var(--green); }
+  .switch.on::after { transform: translateX(15px); }
+  .switch.busy { opacity: .5; }
+
+  .menu {
+    position: fixed; z-index: 10;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    box-shadow: var(--shadow);
+    padding: 4px;
+    min-width: 220px;
+  }
+  .menu button {
+    display: block; width: 100%; text-align: left;
+    border: 0; background: transparent;
+    padding: 6px 10px; border-radius: 6px;
+  }
+  .menu button:hover:not(:disabled) { background: var(--accent); color: #fff; }
+  .menu button:disabled { color: var(--faint); }
+
+  .empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+
+  /* настройки */
+  .overlay {
+    position: fixed; inset: 0; z-index: 20;
+    background: rgba(0,0,0,.25);
+    display: none; align-items: flex-start; justify-content: center;
+    padding-top: 60px;
+  }
+  .overlay.open { display: flex; }
+  .sheet {
+    width: min(460px, calc(100% - 32px));
+    background: var(--panel);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 18px 20px 16px;
+  }
+  .sheet h2 { margin: 0 0 12px; font-size: 15px; }
+  .set-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+  }
+  .set-row:first-of-type { border-top: 0; }
+  .set-row .label { flex: 1; min-width: 0; }
+  .set-row .hint { color: var(--muted); font-size: 12px; }
+  .path {
+    color: var(--muted); font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .stepper { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .stepper button { width: 24px; height: 24px; padding: 0; }
+  .sheet-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">✳</div>
+  <div class="title">
+    <h1>Claude RC Hub</h1>
+    <div class="sub" id="summary">Загрузка…</div>
+  </div>
+  <button class="btn" id="start-auto" title="Запустить все проекты со звёздочкой">Запустить ⭐</button>
+  <button class="btn" id="stop-all">Остановить все</button>
+  <button class="icon-btn" id="open-settings" title="Настройки">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</header>
+
+<div class="banner" id="hub-banner" hidden>
+  <span>Фоновый хаб не запущен: автостарт, перезапуск упавших и «не засыпать» сейчас не работают.</span>
+  <button class="btn primary" id="start-hub">Запустить хаб</button>
+</div>
+
+<div class="toolbar">
+  <input class="search" id="search" placeholder="Поиск проекта" autocomplete="off" spellcheck="false">
+  <div class="seg" id="filter">
+    <button data-f="all" class="on">Все</button>
+    <button data-f="on">Включены</button>
+    <button data-f="auto">⭐ Автостарт</button>
+  </div>
+</div>
+
+<main>
+  <div class="list" id="list"></div>
+</main>
+
+<div class="overlay" id="settings">
+  <div class="sheet">
+    <h2>Настройки</h2>
+    <div class="set-row">
+      <div class="label">
+        <div>Не давать Маку засыпать на зарядке</div>
+        <div class="hint">На батарее и с закрытой крышкой Мак спит как обычно</div>
+      </div>
+      <button class="switch" data-setting="keep_awake"></button>
+    </div>
+    <div class="set-row">
+      <div class="label">
+        <div>Перезапускать упавшие сессии</div>
+        <div class="hint">С паузой 10 с → 5 мин; недоверенные папки не трогаются</div>
+      </div>
+      <button class="switch" data-setting="auto_restart"></button>
+    </div>
+    <div class="set-row">
+      <div class="label">
+        <div>Автостарт: последних проектов</div>
+        <div class="hint" id="count-hint">Если ни один проект не закреплён ⭐</div>
+      </div>
+      <div class="stepper">
+        <button class="btn" data-step="-1">−</button>
+        <span id="count">5</span>
+        <button class="btn" data-step="1">+</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <div class="label">
+        <div>Папка с проектами</div>
+        <div class="path" id="projects-dir"></div>
+      </div>
+      <button class="btn" id="choose-dir">Изменить…</button>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" id="open-log">Лог</button>
+      <button class="btn" id="open-config">config.json</button>
+      <span style="flex:1"></span>
+      <button class="btn primary" id="close-settings">Готово</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
+const MORE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+
+let state = null;
+let filter = "all";
+const optimistic = {};  // name -> желаемое вкл/выкл, пока идёт переключение
+
+const $ = (id) => document.getElementById(id);
+const api = () => window.pywebview.api;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
+function ago(ts, now) {
+  const s = Math.max(0, now - ts);
+  if (s < 60) return "только что";
+  if (s < 3600) return `${Math.floor(s / 60)} мин назад`;
+  if (s < 86400) return `${Math.floor(s / 3600)} ч назад`;
+  const d = Math.floor(s / 86400);
+  if (d < 30) return `${d} ${plural(d, "день", "дня", "дней")} назад`;
+  return new Date(ts * 1000).toLocaleDateString("ru-RU");
+}
+
+function isOn(p) {
+  if (p.name in optimistic) return optimistic[p.name];
+  return p.status === "running" || p.status === "pending";
+}
+
+function statusText(p) {
+  if (p.busy) return isOn(p) ? "Запускается…" : "Останавливается…";
+  switch (p.status) {
+    case "running":
+      if (!p.chats_count) return "Подключён · чатов нет";
+      return `Подключён · ${p.chats_count} ${plural(p.chats_count, "чат", "чата", "чатов")}`;
+    case "pending": return "Подключается…";
+    case "dead": return p.untrusted ? null : "Упал — смотри терминал";
+    default: return "Выключен";
+  }
+}
+
+function render() {
+  if (!state) return;
+  const q = $("search").value.trim().toLowerCase();
+  const on = state.projects.filter((p) => p.status === "running").length;
+  const chats = state.projects.reduce((a, p) => a + (p.status === "running" ? p.chats_count : 0), 0);
+  $("summary").textContent =
+    `Подключено ${on} из ${state.projects.length}` +
+    (chats ? ` · ${chats} ${plural(chats, "чат", "чата", "чатов")}` : "");
+  $("hub-banner").hidden = state.hub_running;
+
+  const list = $("list");
+  list.replaceChildren();
+  const shown = state.projects.filter((p) => {
+    if (q && !p.name.toLowerCase().includes(q)) return false;
+    if (filter === "on") return isOn(p) || p.status === "dead";
+    if (filter === "auto") return p.auto;
+    return true;
+  });
+
+  if (!shown.length) {
+    list.append(el("div", "empty",
+      state.projects.length ? "Ничего не найдено" : `Нет проектов в ${state.settings.projects_dir}`));
+  }
+
+  for (const p of shown) {
+    const row = el("div", "row");
+    row.append(el("div", "dot " + (p.busy ? "pending" : p.status)));
+
+    const info = el("div", "info");
+    info.append(el("div", "name", p.name));
+    const meta = el("div", "meta");
+    const st = statusText(p);
+    if (p.status === "dead" && p.untrusted) {
+      meta.append(el("span", "warn", "Папка не доверена"), " — открой ⋯ → «Доверить папку»");
+    } else {
+      if (p.status === "dead") meta.append(el("span", "warn", st));
+      else meta.append(st);
+      meta.append(` · изменён ${ago(p.activity, state.now)}`);
+    }
+    info.append(meta);
+    if (p.status === "running" && p.chats.length) {
+      const chips = el("div", "chats");
+      for (const c of p.chats) {
+        const chip = el("span", "chip", c);
+        chip.title = c;
+        chips.append(chip);
+      }
+      info.append(chips);
+    }
+    row.append(info);
+
+    const star = el("button", "icon-btn star" + (p.auto ? " auto" : "") + (p.pinned ? " pinned" : ""));
+    star.innerHTML = STAR;
+    star.title = p.pinned
+      ? "Закреплён в автостарте — нажми, чтобы открепить"
+      : p.auto ? "В автостарте как один из последних — нажми, чтобы закрепить"
+      : "Закрепить в автостарте";
+    star.onclick = async () => { await api().toggle_pin(p.name); refresh(); };
+    row.append(star);
+
+    const more = el("button", "icon-btn");
+    more.innerHTML = MORE;
+    more.title = "Ещё";
+    more.onclick = (e) => { e.stopPropagation(); openMenu(more, p); };
+    row.append(more);
+
+    const sw = el("button", "switch" + (isOn(p) ? " on" : "") + (p.busy ? " busy" : ""));
+    sw.title = isOn(p) ? "Выключить Remote Control" : "Включить Remote Control";
+    sw.onclick = () => toggle(p);
+    row.append(sw);
+
+    list.append(row);
+  }
+}
+
+async function toggle(p) {
+  if (p.busy) return;
+  const want = !isOn(p);
+  optimistic[p.name] = want;
+  render();
+  await api().set_enabled(p.name, want);
+  setTimeout(refresh, 400);
+}
+
+let menuEl = null;
+function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+function openMenu(anchor, p) {
+  closeMenu();
+  const m = el("div", "menu");
+  const add = (label, fn, enabled = true) => {
+    const b = el("button", null, label);
+    b.disabled = !enabled;
+    b.onclick = () => { closeMenu(); fn(); };
+    m.append(b);
+  };
+  add("Открыть на claude.ai", () => api().open_url(p.url), !!p.url);
+  add("Показать терминал сессии (QR, ошибки)", () => api().open_terminal(p.name), p.status !== "off");
+  if (p.untrusted) add("Доверить папку (открыть claude, нажать Yes)", () => api().open_trust(p.name));
+  add("Открыть в Finder", () => api().open_finder(p.name));
+  document.body.append(m);
+  const r = anchor.getBoundingClientRect();
+  const w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + "px";
+  m.style.top = (r.bottom + h + 8 > innerHeight ? r.top - h - 4 : r.bottom + 4) + "px";
+  menuEl = m;
+}
+document.addEventListener("click", closeMenu);
+addEventListener("blur", closeMenu);
+
+function renderSettings() {
+  const s = state.settings;
+  for (const b of document.querySelectorAll("[data-setting]")) {
+    b.classList.toggle("on", !!s[b.dataset.setting]);
+  }
+  $("count").textContent = s.autostart_count;
+  $("count-hint").textContent = state.any_pinned
+    ? "Сейчас не используется: автостарт берёт закреплённые ⭐"
+    : "Если ни один проект не закреплён ⭐";
+  $("projects-dir").textContent = s.projects_dir;
+}
+
+async function refresh() {
+  try {
+    state = await api().get_state();
+  } catch (e) {
+    $("summary").textContent = "Ошибка: " + e;
+    return;
+  }
+  // снимаем «оптимистичный» статус, когда реальность догнала
+  for (const p of state.projects) {
+    if (p.name in optimistic && !p.busy) {
+      const real = p.status === "running" || p.status === "pending";
+      if (real === optimistic[p.name] || p.status === "dead") delete optimistic[p.name];
+    }
+  }
+  render();
+  renderSettings();
+}
+
+function wire() {
+  $("search").addEventListener("input", render);
+  for (const b of $("filter").children) {
+    b.onclick = () => {
+      filter = b.dataset.f;
+      for (const x of $("filter").children) x.classList.toggle("on", x === b);
+      render();
+    };
+  }
+  $("start-auto").onclick = async () => { await api().start_autostart(); setTimeout(refresh, 400); };
+  $("stop-all").onclick = async () => { await api().stop_all(); setTimeout(refresh, 400); };
+  $("start-hub").onclick = async () => { await api().start_hub(); setTimeout(refresh, 1500); };
+
+  $("open-settings").onclick = () => $("settings").classList.add("open");
+  $("close-settings").onclick = () => $("settings").classList.remove("open");
+  $("settings").onclick = (e) => { if (e.target === $("settings")) $("settings").classList.remove("open"); };
+  addEventListener("keydown", (e) => { if (e.key === "Escape") { $("settings").classList.remove("open"); closeMenu(); } });
+
+  for (const b of document.querySelectorAll("[data-setting]")) {
+    b.onclick = async () => {
+      await api().set_setting(b.dataset.setting, !state.settings[b.dataset.setting]);
+      refresh();
+    };
+  }
+  for (const b of document.querySelectorAll("[data-step]")) {
+    b.onclick = async () => {
+      await api().set_setting("autostart_count", state.settings.autostart_count + Number(b.dataset.step));
+      refresh();
+    };
+  }
+  $("choose-dir").onclick = async () => { await api().choose_projects_dir(); refresh(); };
+  $("open-log").onclick = () => api().open_log();
+  $("open-config").onclick = () => api().open_config();
+
+  refresh();
+  setInterval(refresh, 2000);
+}
+
+window.addEventListener("pywebviewready", wire);
+</script>
+</body>
+</html>
