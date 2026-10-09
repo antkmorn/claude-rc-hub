@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Окно Claude RC Hub: список проектов, включение Remote Control, чаты, настройки.
+Окно Klod remoteHub: список проектов, включение Remote Control, чаты, настройки.
 
 Работает рядом с меню ✳︎ (claude_rc_hub.py): оба управляют одними и теми же
 tmux-сессиями и одним config.json, поэтому изменения видны и там, и там.
@@ -36,7 +36,7 @@ from rc_core import (
 )
 
 LABEL = "com.user.claude-rc-hub"
-APP_BUNDLE = Path("/Applications/Claude RC Hub.app")
+APP_BUNDLE = Path("/Applications/Klod remoteHub.app")
 UI_PATH = Path(__file__).with_name("ui.html")
 SETTINGS = {"keep_awake", "auto_restart", "autostart_count", "projects_dir"}
 
@@ -196,7 +196,7 @@ def brand_app():
         from AppKit import NSApplication, NSBundle, NSImage
 
         info = NSBundle.mainBundle().infoDictionary()
-        info["CFBundleName"] = "Claude RC Hub"
+        info["CFBundleName"] = "Klod remoteHub"
         icon = APP_BUNDLE / "Contents/Resources/AppIcon.icns"
         if icon.exists():
             NSApplication.sharedApplication().setApplicationIconImage_(
@@ -210,7 +210,7 @@ def main():
     brand_app()
     api = Api()
     api.window = webview.create_window(
-        "Claude RC Hub",
+        "Klod remoteHub",
         UI_PATH.as_uri(),
         js_api=api,
         width=760,

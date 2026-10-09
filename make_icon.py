@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Рисует иконку ✳︎ для Claude RC Hub.app и собирает из неё .icns.
+"""Рисует иконку ✳︎ для Klod remoteHub.app и собирает из неё .icns.
 
 Использование: make_icon.py <путь/к/AppIcon.icns>
 """

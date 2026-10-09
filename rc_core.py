@@ -1,5 +1,5 @@
 """
-Общая логика Claude RC Hub: проекты, конфиг, сессии `claude remote-control`
+Общая логика Klod remoteHub: проекты, конфиг, сессии `claude remote-control`
 в отдельном tmux-сервере. Используется меню ✳︎ (claude_rc_hub.py) и окном (window.py).
 """
 import hashlib

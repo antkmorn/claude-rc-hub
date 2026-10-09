@@ -1,5 +1,5 @@
 #!/bin/bash
-# Установка Claude RC Hub: зависимости, автозапуск при входе в систему.
+# Установка Klod remoteHub: зависимости, автозапуск при входе в систему.
 set -e
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -7,7 +7,7 @@ APP_DIR="$HOME/.claude-rc-hub"
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 LABEL="com.user.claude-rc-hub"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-APP_BUNDLE="/Applications/Claude RC Hub.app"
+APP_BUNDLE="/Applications/Klod remoteHub.app"
 
 echo "→ Проверяю claude..."
 if ! command -v claude >/dev/null 2>&1; then
@@ -75,15 +75,15 @@ launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo "→ Собираю $APP_BUNDLE ..."
-rm -rf "$APP_BUNDLE"
+rm -rf "$APP_BUNDLE" "/Applications/Claude RC Hub.app"  # старое имя приложения
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Claude RC Hub</string>
-  <key>CFBundleDisplayName</key><string>Claude RC Hub</string>
+  <key>CFBundleName</key><string>Klod remoteHub</string>
+  <key>CFBundleDisplayName</key><string>Klod remoteHub</string>
   <key>CFBundleIdentifier</key><string>$LABEL.launcher</string>
   <key>CFBundleExecutable</key><string>launcher</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>

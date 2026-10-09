@@ -1,5 +1,5 @@
 #!/bin/bash
-# Удаление Claude RC Hub: останавливает все сессии и убирает автозапуск.
+# Удаление Klod remoteHub: останавливает все сессии и убирает автозапуск.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 LABEL="com.user.claude-rc-hub"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -11,5 +11,6 @@ for s in $(tmux -L claude-rc ls -F "#{session_name}" 2>/dev/null); do tmux -L cl
 sleep 3
 tmux -L claude-rc kill-server 2>/dev/null || true
 rm -rf "$HOME/.claude-rc-hub"
-rm -rf "/Applications/Claude RC Hub.app"
-echo "✓ Claude RC Hub удалён, все его сессии остановлены."
+rm -rf "/Applications/Klod remoteHub.app"
+rm -rf "/Applications/Claude RC Hub.app"  # старое имя приложения
+echo "✓ Klod remoteHub удалён, все его сессии остановлены."

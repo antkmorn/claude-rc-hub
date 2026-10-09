@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Claude RC Hub — приложение в строке меню macOS.
+Klod remoteHub — приложение в строке меню macOS.
 
 Показывает все проекты из папки проектов, запускает / останавливает
 для каждого отдельную сессию `claude remote-control` (внутри tmux),
@@ -45,14 +45,14 @@ from rc_core import (
     tmux,
 )
 
-APP_BUNDLE = "/Applications/Claude RC Hub.app"
+APP_BUNDLE = "/Applications/Klod remoteHub.app"
 
 
 # ---------------------------------------------------------------- приложение
 
 class Hub(rumps.App):
     def __init__(self):
-        super().__init__("Claude RC", title="✳︎", quit_button=None)
+        super().__init__("Klod remoteHub", title="✳︎", quit_button=None)
         self.cfg = load_config()
         self.caffeinate = None
         self.signature = None
@@ -62,7 +62,7 @@ class Hub(rumps.App):
 
         if not TMUX or not CLAUDE:
             missing = ", ".join(n for n, v in (("tmux", TMUX), ("claude", CLAUDE)) if not v)
-            rumps.alert("Claude RC Hub", f"Не найдено: {missing}. Запусти install.sh ещё раз.")
+            rumps.alert("Klod remoteHub", f"Не найдено: {missing}. Запусти install.sh ещё раз.")
 
         self.set_keep_awake(self.cfg.get("keep_awake", True))
         self.refresh(None)
