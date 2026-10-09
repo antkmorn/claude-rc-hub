@@ -21,12 +21,12 @@ from rc_core import (
     LOG_PATH,
     SOCKET,
     TMUX,
-    activity_time,
     autostart_names,
     list_projects,
     load_config,
     log,
     open_in_terminal,
+    project_activity,
     save_config,
     session_info,
     session_name,
@@ -39,6 +39,7 @@ LABEL = "com.user.claude-rc-hub"
 APP_BUNDLE = Path("/Applications/Klod remoteHub.app")
 UI_PATH = Path(__file__).with_name("ui.html")
 SETTINGS = {"keep_awake", "auto_restart", "autostart_count", "projects_dir"}
+HUB_CHECK_SEC = 30
 
 
 def hub_running():
@@ -53,6 +54,14 @@ class Api:
         self.window = None
         self.busy = set()  # проекты, которые сейчас запускаются / останавливаются
         self.lock = threading.Lock()
+        self.hub_checked = (0.0, False)  # (когда проверяли, жив ли хаб)
+
+    def _hub_running(self, force=False):
+        at, ok = self.hub_checked
+        if force or time.time() - at > HUB_CHECK_SEC:
+            ok = hub_running()
+            self.hub_checked = (time.time(), ok)
+        return ok
 
     def _project(self, name):
         cfg = load_config()
@@ -81,21 +90,22 @@ class Api:
     def get_state(self):
         cfg = load_config()
         projects = list_projects(cfg)
-        states = session_states()
+        texts = {}  # терминал каждой живой сессии читается один раз за опрос
+        states = session_states(texts)
         auto = autostart_names(cfg, projects)
         pinned = set(cfg.get("autostart_pinned", []))
         items = []
         for p in projects:
             sess = session_name(p.name)
             st = states.get(sess, "off")
-            info = session_info(sess) if st != "off" else {}
+            info = session_info(sess, texts.get(sess, "")) if st != "off" else {}
             items.append({
                 "name": p.name,
                 "status": st,
                 "busy": p.name in self.busy,
                 "auto": p.name in auto,
                 "pinned": p.name in pinned,
-                "activity": activity_time(p),
+                "activity": project_activity(p.name),
                 "chats": info.get("chats", []),
                 "chats_count": info.get("chats_count", 0),
                 "url": info.get("url"),
@@ -105,7 +115,7 @@ class Api:
             "projects": items,
             "settings": {k: cfg.get(k) for k in SETTINGS},
             "any_pinned": bool(pinned & {p.name for p in projects}),
-            "hub_running": hub_running(),
+            "hub_running": self._hub_running(),
             "ready": bool(TMUX and CLAUDE),
             "now": time.time(),
         }
@@ -188,6 +198,7 @@ class Api:
         if subprocess.run(["launchctl", "print", f"{domain}/{LABEL}"], capture_output=True).returncode != 0:
             subprocess.run(["launchctl", "bootstrap", domain, str(plist)])
         subprocess.run(["launchctl", "kickstart", f"{domain}/{LABEL}"])
+        self.hub_checked = (0.0, False)  # перепроверить на следующем опросе
 
 
 def brand_app():

@@ -44,6 +44,14 @@ DEFAULT_CONFIG = {
 RESTART_BACKOFF = [10, 30, 60, 120, 300]
 # сколько сессия должна проработать подключённой, чтобы счётчик попыток сбросился
 RESTART_RESET_AFTER = 120
+# «This folder is already served…»: сервер ещё помнит прошлый процесс (обычно
+# после грубого выключения Мака) и отпускает папку минуты через две
+ALREADY_SERVED_DELAY = 120
+# подключённые сессии перечитываются не чаще, чем раз в столько секунд
+CONNECTED_RECHECK = 60
+# список проектов перечитывается с диска не чаще, чем раз в столько секунд
+PROJECTS_CACHE_TTL = 60
+LOG_MAX_BYTES = 1_000_000
 
 TMUX = shutil.which("tmux")
 CLAUDE = shutil.which("claude")
@@ -56,6 +64,10 @@ def log(msg):
         APP_DIR.mkdir(parents=True, exist_ok=True)
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+        if LOG_PATH.stat().st_size > LOG_MAX_BYTES:
+            # оставляем свежую половину, обрезая по границе строки
+            data = LOG_PATH.read_bytes()[-LOG_MAX_BYTES // 2:]
+            LOG_PATH.write_bytes(data[data.find(b"\n") + 1:])
     except OSError:
         pass
 
@@ -109,35 +121,88 @@ def activity_time(p: Path):
     return latest
 
 
-def list_projects(cfg):
+_projects_cache = {"key": None, "at": 0.0, "projects": [], "activity": {}}
+
+
+def list_projects(cfg, fresh=False):
+    """Проекты, свежие сверху. С диска читаются раз в PROJECTS_CACHE_TTL секунд."""
     root = Path(cfg["projects_dir"]).expanduser()
+    c = _projects_cache
+    if not fresh and c["key"] == str(root) and time.time() - c["at"] < PROJECTS_CACHE_TTL:
+        return list(c["projects"])
     if not root.is_dir():
-        return []
-    projects = [
-        p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")
-    ]
-    projects.sort(key=activity_time, reverse=True)
-    return projects
+        projects, activity = [], {}
+    else:
+        projects = [
+            p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")
+        ]
+        activity = {p.name: activity_time(p) for p in projects}
+        projects.sort(key=lambda p: activity[p.name], reverse=True)
+    c.update(key=str(root), at=time.time(), projects=projects, activity=activity)
+    return list(projects)
 
 
-def session_states():
-    """{имя_сессии: 'running' | 'pending' | 'dead'}"""
+def project_activity(name):
+    """Время последнего изменения проекта из кеша list_projects."""
+    return _projects_cache["activity"].get(name, 0)
+
+
+def panes():
+    """{имя_сессии: (мёртв ли процесс, pid)} — один вызов tmux."""
     if not TMUX:
         return {}
-    r = tmux("list-panes", "-a", "-F", "#{session_name}\t#{pane_dead}")
+    r = tmux("list-panes", "-a", "-F", "#{session_name}\t#{pane_dead}\t#{pane_pid}")
     if r.returncode != 0:
         return {}
-    states = {}
+    out = {}
     for line in r.stdout.splitlines():
-        if "\t" not in line:
+        parts = line.split("\t")
+        if len(parts) == 3:
+            out[parts[0]] = (parts[1].strip() == "1", parts[2].strip())
+    return out
+
+
+def is_connected(text):
+    # «Ready» — подключён без чатов, «Connected» — с чатами
+    return bool(re.search(r"\b(Ready|Connected)\b", text))
+
+
+# {сессия: (pid, когда последний раз видели «подключён»)}
+_connected_cache = {}
+
+
+def session_states(texts=None):
+    """{имя_сессии: 'running' | 'pending' | 'dead'}
+
+    Терминал читается только у живых сессий, которые ещё не подключились или
+    не перепроверялись дольше CONNECTED_RECHECK. Если передан словарь texts,
+    в него кладётся прочитанный текст терминала, и читаются все живые сессии.
+    """
+    now = time.time()
+    states = {}
+    current = panes()
+    for name, (dead, pid) in current.items():
+        if dead:
+            states[name] = "dead"
+            if texts is not None:
+                texts[name] = pane_text(name)
             continue
-        name, dead = line.split("\t", 1)
-        states[name] = "dead" if dead.strip() == "1" else "running"
-    # живой процесс ещё не значит, что Remote Control подключился
-    for name, st in states.items():
-        # «Ready» — подключён без сессий, «Connected» — с сессиями
-        if st == "running" and not re.search(r"\b(Ready|Connected)\b", pane_text(name)):
+        cached = _connected_cache.get(name)
+        if texts is None and cached and cached[0] == pid and now - cached[1] < CONNECTED_RECHECK:
+            states[name] = "running"
+            continue
+        text = pane_text(name)
+        if texts is not None:
+            texts[name] = text
+        if is_connected(text):
+            states[name] = "running"
+            _connected_cache[name] = (pid, now)
+        else:
             states[name] = "pending"
+            _connected_cache.pop(name, None)
+    for name in list(_connected_cache):
+        if name not in current:
+            del _connected_cache[name]
     return states
 
 
@@ -147,23 +212,38 @@ def pane_text(sess):
     return r.stdout if r.returncode == 0 else ""
 
 
-def is_untrusted(sess):
-    return "not trusted" in pane_text(sess).lower()
+def is_untrusted(sess, text=None):
+    return "not trusted" in (pane_text(sess) if text is None else text).lower()
+
+
+def death_reason(text):
+    """Последняя осмысленная строка упавшей сессии — для лога."""
+    lines = [
+        l.strip() for l in text.splitlines()
+        if l.strip() and not l.startswith("Pane is dead") and not l.startswith("[bridge]")
+    ]
+    return lines[-1][:300] if lines else "(терминал пуст)"
+
+
+def is_already_served(text):
+    return "already served" in text
 
 
 def kill_sessions(sessions, timeout=5):
     """Останавливает сессии мягко: Ctrl-C, чтобы claude успел отписаться от
     сервера. Если убить сразу, папка ещё несколько минут считается занятой
     («This folder is already served…») и новый запуск в ней падает."""
-    states = session_states()
-    alive = [s for s in sessions if states.get(s) in ("running", "pending")]
+    def alive_of(names):
+        current = panes()
+        return [s for s in names if s in current and not current[s][0]]
+
+    alive = alive_of(sessions)
     for s in alive:
         tmux("send-keys", "-t", s, "C-c")
     deadline = time.time() + timeout
     while alive and time.time() < deadline:
         time.sleep(0.2)
-        states = session_states()
-        alive = [s for s in alive if states.get(s) in ("running", "pending")]
+        alive = alive_of(alive)
     for s in sessions:
         tmux("kill-session", "-t", s)
 
@@ -211,9 +291,10 @@ def autostart_names(cfg, projects):
     return {p.name for p in projects[:count]}
 
 
-def session_info(sess):
+def session_info(sess, text=None):
     """Что видно в терминале сессии: чаты, ссылка на claude.ai, недоверенная папка."""
-    text = pane_text(sess)
+    if text is None:
+        text = pane_text(sess)
     lines = text.splitlines()
     info = {"chats": [], "chats_count": 0, "url": None, "untrusted": "not trusted" in text.lower()}
     cap_idx = None

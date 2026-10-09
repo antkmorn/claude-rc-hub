@@ -23,6 +23,10 @@ except Exception:
 import rumps
 
 from rc_core import (
+    ALREADY_SERVED_DELAY,
+    death_reason,
+    is_already_served,
+    pane_text,
     CLAUDE,
     CONFIG_PATH,
     LOG_PATH,
@@ -46,6 +50,23 @@ from rc_core import (
 )
 
 APP_BUNDLE = "/Applications/Klod remoteHub.app"
+REFRESH_SEC = 15
+
+
+def watch_power_off(callback):
+    """Вызывает callback при выключении, перезагрузке и выходе из системы."""
+    from AppKit import NSWorkspace, NSWorkspaceWillPowerOffNotification
+    from Foundation import NSObject
+
+    class Observer(NSObject):
+        def willPowerOff_(self, _note):
+            callback()
+
+    obs = Observer.alloc().init()
+    NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
+        obs, b"willPowerOff:", NSWorkspaceWillPowerOffNotification, None
+    )
+    return obs  # ссылку нужно держать, иначе наблюдатель соберётся сборщиком
 
 
 # ---------------------------------------------------------------- приложение
@@ -59,6 +80,8 @@ class Hub(rumps.App):
         self.dirty = True
         self.restarts = {}  # {сессия: {"attempts": n, "next": время следующей попытки}}
         self.connected_since = {}
+        self.dead_text = {}  # {сессия: текст терминала} — упавшие читаем один раз
+        self.restart_paused_until = 0  # во время выключения Мака не перезапускаем
 
         if not TMUX or not CLAUDE:
             missing = ", ".join(n for n, v in (("tmux", TMUX), ("claude", CLAUDE)) if not v)
@@ -66,8 +89,9 @@ class Hub(rumps.App):
 
         self.set_keep_awake(self.cfg.get("keep_awake", True))
         self.refresh(None)
-        self.timer = rumps.Timer(self.refresh, 5)
+        self.timer = rumps.Timer(self.refresh, REFRESH_SEC)
         self.timer.start()
+        self.power_observer = watch_power_off(self.on_power_off)
 
         delay = float(self.cfg.get("autostart_delay_sec", 20))
         threading.Timer(delay, self.autostart).start()
@@ -91,6 +115,11 @@ class Hub(rumps.App):
                 time.sleep(1)
         self.dirty = True
 
+    def dead_info(self, sess):
+        if sess not in self.dead_text:
+            self.dead_text[sess] = pane_text(sess)
+        return self.dead_text[sess]
+
     def watchdog(self, projects, states):
         """Перезапускает упавшие сессии с нарастающей паузой."""
         now = time.time()
@@ -103,6 +132,11 @@ class Hub(rumps.App):
                     self.restarts.pop(sess, None)
             else:
                 self.connected_since.pop(sess, None)
+            if st != "dead":
+                self.dead_text.pop(sess, None)
+        for sess in list(self.dead_text):
+            if sess not in states:
+                del self.dead_text[sess]
         # остановленные вручную сессии исчезают из tmux — забываем о них
         for sess in list(self.restarts):
             if sess not in states:
@@ -110,14 +144,23 @@ class Hub(rumps.App):
 
         if not self.cfg.get("auto_restart", True) or not CLAUDE:
             return False
+        if now < self.restart_paused_until:
+            return False
         started = False
         for sess, st in states.items():
             p = by_sess.get(sess)
-            if st != "dead" or p is None or is_untrusted(sess):
+            if st != "dead" or p is None:
+                continue
+            text = self.dead_info(sess)
+            if is_untrusted(sess, text):
                 continue
             r = self.restarts.setdefault(sess, {"attempts": 0, "next": None})
             if r["next"] is None:
-                delay = RESTART_BACKOFF[min(r["attempts"], len(RESTART_BACKOFF) - 1)]
+                if is_already_served(text):
+                    delay = ALREADY_SERVED_DELAY
+                else:
+                    delay = RESTART_BACKOFF[min(r["attempts"], len(RESTART_BACKOFF) - 1)]
+                log(f"died {p.name}: {death_reason(text)} — restart in {delay}s")
                 r["next"] = now + delay
                 self.dirty = True
             elif now >= r["next"]:
@@ -170,8 +213,18 @@ class Hub(rumps.App):
         )
         self.title = f"✳︎ {running}" if running else "✳︎"
 
+        live = sum(1 for p in projects if states.get(session_name(p.name)) in ("running", "pending"))
+        if live:
+            toggle_all = rumps.MenuItem(f"⏻ Выключить все ({live})", callback=self.on_stop_all)
+        else:
+            toggle_all = rumps.MenuItem(
+                f"⏻ Включить все ⭐ ({len(auto)})",
+                callback=lambda _: threading.Thread(target=self.autostart).start(),
+            )
+
         items = [
             rumps.MenuItem("🪟 Открыть окно", callback=lambda _: subprocess.run(["open", APP_BUNDLE])),
+            toggle_all,
             rumps.MenuItem(f"Запущено: {running} из {len(projects)}  ·  ⭐ = автостарт"),
             None,
         ]
@@ -197,7 +250,7 @@ class Hub(rumps.App):
             if st == "pending":
                 sub.append(rumps.MenuItem("⏳ Ещё не подключился — смотри терминал"))
             if st == "dead":
-                if is_untrusted(sess):
+                if is_untrusted(sess, self.dead_info(sess)):
                     sub.append(rumps.MenuItem(
                         "⚠️ Папка не доверена — открыть claude и нажать Yes",
                         callback=lambda _, p=p: self.on_trust(p),
@@ -227,9 +280,6 @@ class Hub(rumps.App):
         restart.state = 1 if self.cfg.get("auto_restart", True) else 0
 
         items += [
-            None,
-            rumps.MenuItem("▶ Запустить все ⭐ (автостарт)", callback=lambda _: threading.Thread(target=self.autostart).start()),
-            rumps.MenuItem("■ Остановить все", callback=self.on_stop_all),
             None,
             awake,
             restart,
@@ -293,6 +343,13 @@ class Hub(rumps.App):
         self.restarts.clear()
         self.dirty = True
         self.refresh(None)
+
+    def on_power_off(self):
+        # мягко гасим сессии, чтобы после включения папки не считались занятыми
+        log("power off: stopping sessions gracefully")
+        # если выключение отменят, через 2 минуты упавшие поднимутся сами
+        self.restart_paused_until = time.time() + 120
+        kill_sessions(list(session_states()), timeout=4)
 
     def on_quit(self, _):
         self.set_keep_awake(False)

@@ -79,6 +79,11 @@
   .btn:hover { background: var(--hover); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn.primary:hover { filter: brightness(1.05); }
+  .all-toggle {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--muted); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
   .icon-btn {
     border: 0; background: transparent;
     width: 30px; height: 30px; border-radius: 7px;
@@ -250,8 +255,10 @@
     <h1>Klod remoteHub</h1>
     <div class="sub" id="summary">Загрузка…</div>
   </div>
-  <button class="btn" id="start-auto" title="Запустить все проекты со звёздочкой">Запустить ⭐</button>
-  <button class="btn" id="stop-all">Остановить все</button>
+  <label class="all-toggle" id="all-toggle">
+    <span id="all-label">Все ⭐</span>
+    <button class="switch" id="all-switch"></button>
+  </label>
   <button class="icon-btn" id="open-settings" title="Настройки">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
@@ -323,6 +330,7 @@
 const STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
 const MORE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 
+const POLL_MS = 4000;
 let state = null;
 let filter = "all";
 const optimistic = {};  // name -> желаемое вкл/выкл, пока идёт переключение
@@ -380,6 +388,11 @@ function render() {
     `Подключено ${on} из ${state.projects.length}` +
     (chats ? ` · ${chats} ${plural(chats, "чат", "чата", "чатов")}` : "");
   $("hub-banner").hidden = state.hub_running;
+  const live = state.projects.filter(isOn).length;
+  const autoCount = state.projects.filter((p) => p.auto).length;
+  $("all-switch").classList.toggle("on", live > 0);
+  $("all-label").textContent = live ? `Включено: ${live}` : `Все ⭐ (${autoCount})`;
+  $("all-switch").title = live ? "Выключить все проекты" : "Включить все проекты со звёздочкой";
 
   const list = $("list");
   list.replaceChildren();
@@ -519,8 +532,16 @@ function wire() {
       render();
     };
   }
-  $("start-auto").onclick = async () => { await api().start_autostart(); setTimeout(refresh, 400); };
-  $("stop-all").onclick = async () => { await api().stop_all(); setTimeout(refresh, 400); };
+  $("all-switch").onclick = async () => {
+    const anyOn = state.projects.some(isOn);
+    // мгновенно показываем результат, реальное состояние догонит при опросе
+    for (const p of state.projects) {
+      if (anyOn ? isOn(p) : p.auto) optimistic[p.name] = !anyOn;
+    }
+    render();
+    await (anyOn ? api().stop_all() : api().start_autostart());
+    setTimeout(refresh, 400);
+  };
   $("start-hub").onclick = async () => { await api().start_hub(); setTimeout(refresh, 1500); };
 
   $("open-settings").onclick = () => $("settings").classList.add("open");
@@ -544,8 +565,12 @@ function wire() {
   $("open-log").onclick = () => api().open_log();
   $("open-config").onclick = () => api().open_config();
 
+  // опрашиваем только видимое окно: свёрнутое или перекрытое ничего не тратит
   refresh();
-  setInterval(refresh, 2000);
+  setInterval(() => { if (document.visibilityState === "visible") refresh(); }, POLL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refresh();
+  });
 }
 
 window.addEventListener("pywebviewready", wire);
